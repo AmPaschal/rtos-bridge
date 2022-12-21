@@ -10,9 +10,12 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
+#include "time.h"
+#include <math.h>
 
 //gcc -c -Wall -Werror -fPIC freertos-bridge.c
 //gcc -shared -o libfreertos-bridge.so freertos-bridge.o
@@ -21,7 +24,7 @@
 #define CLIENT_SOCKET_NAME "/tmp/clientsocket2"
 #define BUFFER_SIZE 20
 #define ETH_IP_TYPE        0x0800
-#define FUZZ_MODE 1
+#define FUZZ_MODE 4
 // 1 - CVE-2018-16524
 // 2 - CVE-2018-16601
 // 3 - CVE-2018-16603
@@ -29,6 +32,8 @@
 
 static int data_socket;
 static int tun_fd;
+
+// static FILE *fp;
 
 struct AcceptPackage {
     int sockfd;
@@ -116,6 +121,7 @@ int send_syscall(struct SyscallPackage *syscallPackage, struct SyscallResponsePa
 
 
 static int freertos_socket(void *userdata, int domain, int type, int protocol) {
+    print_current_time("socket_create");
     printf("Creating a freertos socket\n");
 
     struct SyscallPackage syscallPackage;
@@ -134,6 +140,8 @@ static int freertos_socket(void *userdata, int domain, int type, int protocol) {
 }
 
 static int freertos_bind (void *userdata, int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+
+    print_current_time("socket_bind");
 
     struct BindPackage bindPackage;
 
@@ -157,6 +165,8 @@ static int freertos_bind (void *userdata, int sockfd, const struct sockaddr *add
 }
 
 static int freertos_listen (void *userdata, int sockfd, int backlog) {
+
+    print_current_time("socket_listen");
     struct ListenPackage listenPackage;
 
     listenPackage.sockfd = sockfd;
@@ -179,6 +189,8 @@ static int freertos_listen (void *userdata, int sockfd, int backlog) {
 
 static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 
+    print_current_time("socket_accept");
+
     struct AcceptPackage acceptPackage;
 
     acceptPackage.sockfd = sockfd;
@@ -195,6 +207,9 @@ static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, s
         return 0;
     }
 
+    printf("Printing returned accept ip addr...\n");
+    print_hex((unsigned char *) &syscallResponse.acceptResponse.addr, syscallResponse.acceptResponse.addrlen);
+
     memcpy(addr, &(syscallResponse.acceptResponse.addr), sizeof(struct sockaddr));
     *addrlen = syscallResponse.acceptResponse.addrlen;
 
@@ -203,6 +218,8 @@ static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, s
 
 
 static int freertos_connect (void *userdata, int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+
+    print_current_time("socket_connect");
 
     struct BindPackage connectPackage;
 
@@ -226,6 +243,8 @@ static int freertos_connect (void *userdata, int sockfd, const struct sockaddr *
 }
 
 static int freertos_close(void *userdata, int fd) {
+
+    print_current_time("socket_close");
 
     struct ClosePackage closePackage;
     closePackage.sockfd = fd;
@@ -252,10 +271,12 @@ static int freertos_gettimeofday(void *userdata, struct timeval *tv,
 
 static int freertos_netdev_send (void *userdata, const void *buf, size_t count) {
 
+    print_current_time("netdev_send");
+
     printf("IP packet to be sent:\n");
     print_hex((unsigned char *)buf, count);
     printf("\n");
-//46:e7:d7:aa:9b:5f
+    //46:e7:d7:aa:9b:5f
     struct EthernetHeader ethernetHeader;
     uint8_t destinationAddress[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x41};
     //uint8_t sourceAddress[6] = {0x3A, 0x01, 0x49, 0xBA, 0x4C, 0xCE};
@@ -322,6 +343,8 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
 static int freertos_netdev_receive (void *userdata, void *buffer, size_t *count,
 			      long long *time_usecs) {
 
+    print_current_time("netdev_receive");
+
     printf("freertos_netdev_receive called...\n");
 
     uint8_t sutAddress[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x41};
@@ -372,6 +395,8 @@ static int freertos_netdev_receive (void *userdata, void *buffer, size_t *count,
 
 static ssize_t freertos_write(void *userdata, int fd, const void *buf, size_t count) {
 
+    print_current_time("socket_write");
+
     struct WritePackage writePackage;
     writePackage.sockfd = fd;
 
@@ -410,6 +435,7 @@ static ssize_t freertos_write(void *userdata, int fd, const void *buf, size_t co
 }
 
 static ssize_t freertos_read(void *userdata, int fd, void *buf, size_t count) {
+    print_current_time("socket_read");
     struct ReadPackage readPackage;
     readPackage.sockfd = fd;
     readPackage.count = count;
@@ -438,25 +464,30 @@ int freertos_usleep(void *userdata, useconds_t usec) {
 
 static void freertos_free(void *userdata) {
 
-    /*printf("freertos_free called...\n");
-    struct SyscallPackage syscallPackage;
-    strcpy(syscallPackage.syscallId, "socket_free\0");
+    print_current_time("socket_free");
 
-    struct SyscallResponsePackage syscallResponse;
+    //printf("Sleeping for 10 seconds\n");
 
-    int result = send_syscall(&syscallPackage, &syscallResponse);
+    //sleep(10);
 
-    if (result == -1) {
-        printf("Freeing FreeRTOS failed...\n");
-    }*/
+    // int fclose_result = fclose(fp);
+
+    // printf("fclose result: %d\n", fclose_result);
 
     int closeResult = close(data_socket);
 
-    printf("Closing data socket with close result: %d and errno: %d\n", closeResult, errno);
+    if (closeResult == 0) {
+        printf("Closing data socket with close result: %d\n", closeResult);
+    } else {
+        printf("Closing data socket with close result: %d and errno: %d\n", closeResult, errno);
+    }
 
     printf("Freeing up userdata...\n");
 
     free(userdata);
+
+    printf("Freeing tun_fd");
+    close(tun_fd);
 
 }
 
@@ -506,8 +537,11 @@ int tun_alloc(char *dev, int flags) {
 
    /* open the clone device */
    if( (fd = open(clonedev, O_RDWR)) < 0 ) {
+        printf("tun open failed with code %d and errno %d...\n", fd, errno);
      return fd;
    }
+
+   printf("Tap file descriptor is %d...\n", fd);
 
    /* preparation of the struct ifr, of type "struct ifreq" */
    memset(&ifr, 0, sizeof(ifr));
@@ -523,6 +557,7 @@ int tun_alloc(char *dev, int flags) {
 
    /* try to create the device */
    if( (err = ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0 ) {
+        printf("tun ioctl failed with code %d and errno %s...\n", err, strerror(errno));
      close(fd);
      return err;
    }
@@ -540,6 +575,10 @@ int tun_alloc(char *dev, int flags) {
 
 
 void packetdrill_interface_init(const char *flags, struct packetdrill_interface *interface) {
+
+    // fp = fopen("/home/pamusuo/research/rtos-fuzzing/rtos-bridge/call-logs-data.txt", "w");
+
+    print_current_time("rtos-bridge init time");
 
     interface->userdata = malloc(10 * sizeof(char));
 
@@ -569,21 +608,6 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
         exit(EXIT_FAILURE);
     }
 
-    //int reuse = 1;
-
-    /*if (setsockopt(data_socket, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
-        printf("setsockopt(SO_REUSEADDR) failed...\n");
-    }
-
-    if (setsockopt(data_socket, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)) < 0) {
-        printf("setsockopt(SO_REUSEPORT) failed");
-    }*/
-
-    /*struct linger lin;
-    lin.l_onoff = 0;
-    lin.l_linger = 0;
-    setsockopt(data_socket, SOL_SOCKET, SO_LINGER, (const char *)&lin, sizeof(int));*/
-
     memset(&my_addr, 0, sizeof(struct sockaddr_un));
     memset(&peer_addr, 0, sizeof(struct sockaddr_un));
 
@@ -593,23 +617,36 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     peer_addr.sun_family = AF_UNIX;
     strcpy(peer_addr.sun_path, REMOTE_SOCKET_NAME);
 
-    ret = connect(data_socket, (const struct sockaddr *) &peer_addr, sizeof(struct sockaddr_un));
+    int connected = 0;
 
-    if (ret != 0) {
-        fprintf(stderr, "The server is down with error: %d...\n", ret);
-        exit(EXIT_FAILURE);
-    } else {
-        printf("Connected to remote socket: V1.....\n");
+    while (!connected) {
 
-        struct SyscallPackage syscallPackage;
-        strcpy(syscallPackage.syscallId, "freertos_init\0");
+        ret = connect(data_socket, (const struct sockaddr *) &peer_addr, sizeof(struct sockaddr_un));
 
-        struct SyscallResponsePackage syscallResponse;
+        if (ret == 0) {
+            //fprintf(stderr, "The server is down with error: %d...\n", ret);
+            //exit(EXIT_FAILURE);
 
-        int result = send_syscall(&syscallPackage, &syscallResponse);
+            connected = 1;
+        
+            printf("Connected to remote socket: V1.....\n");
 
-        if (result == -1) {
-            printf("Initializing FreeRTOS failed...\n");
+            struct SyscallPackage syscallPackage;
+            strcpy(syscallPackage.syscallId, "freertos_init\0");
+
+            print_current_time("socket_init");
+
+            struct SyscallResponsePackage syscallResponse;
+
+            int result = send_syscall(&syscallPackage, &syscallResponse);
+
+            print_current_time("socket_init_end");
+
+            if (result == -1) {
+                printf("Initializing FreeRTOS failed...\n");
+            }
+        } else {
+            sleep(0.02);
         }
     }
 
@@ -617,7 +654,16 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
 
     /* Connect to the device */
     strcpy(tun_name, "tap0");
-    tun_fd = tun_alloc(tun_name, IFF_TAP | IFF_NO_PI);  /* tun interface */
+
+    if (getenv("PD_TAP_FD")) {
+        printf("TAP_FD found in environment... using...\n");
+        tun_fd = atoi(getenv("PD_TAP_FD"));
+    } else {
+        printf("TAP_FD not found in environment... generating...\n");
+        tun_fd = tun_alloc(tun_name, IFF_TAP | IFF_NO_PI);  /* tun interface */
+    }
+
+    
 
     if(tun_fd < 0){
         printf("Allocating interface failed with code: %d and errno: %d...\n", tun_fd, errno);
@@ -626,24 +672,34 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
 
 }
 
-/*!
- * @brief print binary packet in hex
- * @param [in] bin_daa data to print
- * @param [in] len length of the data
- */
-/*
-static void print_hex( unsigned char * bin_data,
-                       size_t len )
-*/
-/*static void print_hex(unsigned char *bin_data, size_t len) *//*
+/* void print_current_time(char *message) {
+    struct timeval te;
 
-{
-    size_t i;
+    gettimeofday(&te, NULL);
 
-    for( i = 0; i < len; ++i )
-    {
-        printf( "%.2X ", bin_data[ i ] );
-    }
+    double milliseconds = te.tv_sec * 1000LL + te.tv_usec/1000;
 
-    printf( "\n" );
-}*/
+    printf("%s: ", message);
+    printf("%f\n", milliseconds);
+
+} */
+
+void print_current_time(char *message) {
+    /* time_t timer;
+    char buffer[26];
+    int millisec;
+    struct tm *tm_info;
+
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    timer = time(NULL);
+    tm_info = localtime(&timer);
+
+    millisec = tv.tv_usec/1000.0;
+
+    fprintf(fp, "%s: ", message);
+    strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+    fprintf(fp, "%s.%03d\n", buffer, millisec); */
+
+}

@@ -1,0 +1,21 @@
+rtos-bridge init time: 2022-10-05 15:28:39.413
+socket_create: 2022-10-05 15:28:39.524
+socket_connect: 2022-10-05 15:28:39.630
+netdev_receive: 2022-10-05 15:28:39.632
+netdev_send: 2022-10-05 15:28:39.750
+netdev_receive: 2022-10-05 15:28:39.750
+netdev_send: 2022-10-05 15:28:39.829
+netdev_send: 2022-10-05 15:28:39.830
+netdev_send: 2022-10-05 15:28:39.830
+netdev_send: 2022-10-05 15:28:39.830
+netdev_send: 2022-10-05 15:28:39.830
+netdev_send: 2022-10-05 15:28:39.831
+netdev_send: 2022-10-05 15:28:39.832
+netdev_send: 2022-10-05 15:28:39.834
+netdev_send: 2022-10-05 15:28:39.841
+socket_free: 2022-10-05 15:28:39.841
+
+total time: 0.428
+init time: 0.111
+connection time: 0.305
+max_time between data transmission: 0.002

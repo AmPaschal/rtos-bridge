@@ -1,0 +1,6 @@
+rtos-bridge init time: 2022-10-11 05:48:40.538
+socket_init: 2022-10-11 05:48:40.538
+socket_init_end: 2022-10-11 05:48:40.556
+socket_create: 2022-10-11 05:48:40.652
+socket_bind: 2022-10-11 05:48:40.656
+socket_free: 2022-10-11 05:48:40.676

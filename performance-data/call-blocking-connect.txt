@@ -1,0 +1,12 @@
+rtos-bridge init time: 2022-10-05 14:48:15.465
+socket_create: 2022-10-05 14:48:15.564
+socket_connect: 2022-10-05 14:48:15.671
+netdev_receive: 2022-10-05 14:48:15.673
+netdev_send: 2022-10-05 14:48:15.791
+netdev_receive: 2022-10-05 14:48:15.791
+netdev_send: 2022-10-05 14:48:15.949
+socket_free: 2022-10-05 14:48:15.949
+
+total time: 484ms
+init time: 99ms
+time to connection establishment: 227ms

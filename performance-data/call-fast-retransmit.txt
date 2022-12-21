@@ -1,0 +1,28 @@
+rtos-bridge init time: 2022-10-05 14:59:27.723
+socket_create: 2022-10-05 14:59:27.824
+socket_bind: 2022-10-05 14:59:27.825
+socket_listen: 2022-10-05 14:59:27.845
+netdev_send: 2022-10-05 14:59:27.865
+netdev_receive: 2022-10-05 14:59:27.865
+netdev_send: 2022-10-05 14:59:28.026
+socket_accept: 2022-10-05 14:59:28.026
+socket_write: 2022-10-05 14:59:28.125
+netdev_receive: 2022-10-05 14:59:28.145
+netdev_send: 2022-10-05 14:59:28.247
+socket_write: 2022-10-05 14:59:28.247
+netdev_receive: 2022-10-05 14:59:28.265
+netdev_receive: 2022-10-05 14:59:28.266
+netdev_receive: 2022-10-05 14:59:28.267
+netdev_receive: 2022-10-05 14:59:28.267
+netdev_send: 2022-10-05 14:59:28.370
+netdev_send: 2022-10-05 14:59:28.370
+netdev_send: 2022-10-05 14:59:28.370
+netdev_receive: 2022-10-05 14:59:28.370
+netdev_send: 2022-10-05 14:59:28.647
+netdev_send: 2022-10-05 14:59:28.647
+socket_free: 2022-10-05 14:59:28.647
+
+total time: 924ms
+connection time: 0.301
+receive time were the greatest.
+one instance, it took 100ms and another instance, 250ms
