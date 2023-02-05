@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -24,16 +23,28 @@
 #define CLIENT_SOCKET_NAME "/tmp/clientsocket2"
 #define BUFFER_SIZE 20
 #define ETH_IP_TYPE        0x0800
-#define FUZZ_MODE 4
+#define FUZZ_MODE 0
 // 1 - CVE-2018-16524
 // 2 - CVE-2018-16601
 // 3 - CVE-2018-16603
 // 4 - CVE-2018-16526
+// 5 - CVE-2022-36053
+
+#define TAP 1
+#define TUN 2
+
+#define CONFIG_NET_INTERFACE TUN
 
 static int data_socket;
 static int tun_fd;
 
 // static FILE *fp;
+
+struct SocketPackage {
+    int domain;
+    int type;
+    int protocol;
+};
 
 struct AcceptPackage {
     int sockfd;
@@ -41,7 +52,10 @@ struct AcceptPackage {
 
 struct BindPackage {
     int sockfd;
-    struct sockaddr addr;
+    union {
+        struct sockaddr_in addr;
+        struct sockaddr_in6 addr6;
+    };
     socklen_t addrlen;
 };
 
@@ -55,9 +69,25 @@ struct WritePackage {
     size_t count;
 };
 
+struct SendToPackage {
+    int sockfd;
+    int flags;
+    union {
+        struct sockaddr_in addr;
+        struct sockaddr_in6 addr6;
+    };
+    socklen_t addrlen;
+};
+
 struct ReadPackage {
     int sockfd;
     size_t count;
+};
+
+struct RecvFromPackage {
+    int sockfd;
+    size_t count;
+    int flags;
 };
 
 struct ClosePackage {
@@ -70,18 +100,24 @@ struct SyscallPackage {
     size_t bufferedCount;
     void *buffer;
     union {
+        struct SocketPackage socketPackage;
         struct BindPackage bindPackage;
         struct ListenPackage listenPackage;
         struct AcceptPackage acceptPackage;
         struct BindPackage connectPackage;
         struct WritePackage writePackage;
+        struct SendToPackage sendToPackage;
         struct ClosePackage closePackage;
         struct ReadPackage readPackage;
+        struct RecvFromPackage recvFromPackage;
     };
 };
 
 struct AcceptResponsePackage {
-    struct sockaddr addr;
+    union {
+        struct sockaddr_in addr;
+        struct sockaddr_in6 addr6;
+    };
     socklen_t addrlen;
 };
 
@@ -124,8 +160,14 @@ static int freertos_socket(void *userdata, int domain, int type, int protocol) {
     print_current_time("socket_create");
     printf("Creating a freertos socket\n");
 
+    struct SocketPackage socketPackage;
+    socketPackage.domain = domain;
+    socketPackage.type = type;
+    socketPackage.protocol = protocol;
+
     struct SyscallPackage syscallPackage;
     strcpy(syscallPackage.syscallId, "socket_create\0");
+    syscallPackage.socketPackage = socketPackage;
 
 
     struct SyscallResponsePackage syscallResponse;
@@ -203,14 +245,14 @@ static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, s
 
     int result = send_syscall(&syscallPackage, &syscallResponse);
 
-    if (result == -1) {
+    if (result == -1 || syscallResponse.result <= 0) {
         return 0;
     }
 
     printf("Printing returned accept ip addr...\n");
     print_hex((unsigned char *) &syscallResponse.acceptResponse.addr, syscallResponse.acceptResponse.addrlen);
 
-    memcpy(addr, &(syscallResponse.acceptResponse.addr), sizeof(struct sockaddr));
+    memcpy(addr, &(syscallResponse.acceptResponse.addr), syscallResponse.acceptResponse.addrlen);
     *addrlen = syscallResponse.acceptResponse.addrlen;
 
     return syscallResponse.result;
@@ -224,7 +266,7 @@ static int freertos_connect (void *userdata, int sockfd, const struct sockaddr *
     struct BindPackage connectPackage;
 
     connectPackage.sockfd = sockfd;
-    memcpy(&connectPackage.addr, addr, sizeof(struct sockaddr));
+    memcpy(&connectPackage.addr, addr, addrlen);
     connectPackage.addrlen = addrlen;
 
     struct SyscallPackage syscallPackage;
@@ -276,61 +318,76 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
     printf("IP packet to be sent:\n");
     print_hex((unsigned char *)buf, count);
     printf("\n");
-    //46:e7:d7:aa:9b:5f
-    struct EthernetHeader ethernetHeader;
-    uint8_t destinationAddress[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x41};
-    //uint8_t sourceAddress[6] = {0x3A, 0x01, 0x49, 0xBA, 0x4C, 0xCE};
-    uint8_t sourceAddress[6] = {0x46, 0xE7, 0xD7, 0xAA, 0x9B, 0x5F};
 
-    memcpy(ethernetHeader.destinationAddress, destinationAddress, sizeof(destinationAddress));
-    memcpy(ethernetHeader.sourceAddress, sourceAddress, sizeof(sourceAddress));
-    ethernetHeader.frameType = htons(ETH_IP_TYPE);
+    char *data;
+    size_t data_len;
 
-    size_t ethernetHeaderSize = sizeof(struct EthernetHeader);
+    if (CONFIG_NET_INTERFACE == TAP) {
+            //46:e7:d7:aa:9b:5f
+        struct EthernetHeader ethernetHeader;
+        uint8_t destinationAddress[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x41};
+        //uint8_t sourceAddress[6] = {0x3A, 0x01, 0x49, 0xBA, 0x4C, 0xCE};
+        uint8_t sourceAddress[6] = {0x46, 0xE7, 0xD7, 0xAA, 0x9B, 0x5F};
 
-    size_t ethernetFrameSize = count + ethernetHeaderSize;
+        memcpy(ethernetHeader.destinationAddress, destinationAddress, sizeof(destinationAddress));
+        memcpy(ethernetHeader.sourceAddress, sourceAddress, sizeof(sourceAddress));
+        ethernetHeader.frameType = htons(ETH_IP_TYPE);
 
-    char *ethernetFrame = malloc(ethernetFrameSize);
+        size_t ethernetHeaderSize = sizeof(struct EthernetHeader);
 
-    memcpy(ethernetFrame, &ethernetHeader, ethernetHeaderSize);
-    memcpy(ethernetFrame + ethernetHeaderSize, buf, count);
+        data_len = count + ethernetHeaderSize;
 
-    printf("Correct Ethernet frame:\n");
-    print_hex((unsigned char *)ethernetFrame, ethernetFrameSize);
+        data = malloc(data_len);
 
-    if (ethernetFrameSize == 66 && FUZZ_MODE == 1) {
-        ethernetFrame[17] = 0x29;
-        ethernetFrameSize -= 11;
-    } else if (ethernetFrameSize == 66 && FUZZ_MODE == 2) {
-        ethernetFrame[14] = 0x4F;
-    } else if (ethernetFrameSize == 66 && FUZZ_MODE == 3) {
-        ethernetFrame[17] = 0x14;
-        ethernetFrameSize -= 32;
-    } else if (ethernetFrameSize == 2054 && FUZZ_MODE == 4) {
-        ethernetFrameSize += 8;
-        ethernetFrame = realloc(ethernetFrame, ethernetFrameSize);
-        char *frameOffset = ethernetFrame + 34;
-        memmove(frameOffset + 8, frameOffset, ethernetFrameSize - 42);
-        memset(frameOffset, 0, 8);
-        ethernetFrame[14] = 0x47;
+        memcpy(data, &ethernetHeader, ethernetHeaderSize);
+        memcpy(data + ethernetHeaderSize, buf, count);
 
+        printf("Correct Ethernet frame:\n");
+        print_hex((unsigned char *)data, data_len);
+
+        if (data_len == 66 && FUZZ_MODE == 1) {
+            data[17] = 0x29;
+            data_len -= 11;
+        } else if (data_len == 66 && FUZZ_MODE == 2) {
+            data[14] = 0x4F;
+        } else if (data_len == 66 && FUZZ_MODE == 3) {
+            data[17] = 0x14;
+            data_len -= 32;
+        } else if (data_len == 2054 && FUZZ_MODE == 4) {
+            data_len += 8;
+            data = realloc(data, data_len);
+            char *frameOffset = data + 34;
+            memmove(frameOffset + 8, frameOffset, data_len - 42);
+            memset(frameOffset, 0, 8);
+            data[14] = 0x47;
+
+        }
+    } else {
+        data = (char *) buf;
+        data_len = count;
+
+        if (FUZZ_MODE == 5) {
+            data[5] = 0x01;
+            data[6] = 0x00;
+            data_len = count - 7;
+        }
+        
     }
 
-    ssize_t ret = write(tun_fd, ethernetFrame, ethernetFrameSize);
 
-    printf("Ethernet frame sent\n");
-    print_hex((unsigned char *)ethernetFrame, ethernetFrameSize);
+    ssize_t ret = write(tun_fd, data, data_len);
 
-    /*printf("Ethernet frame sent:\n");
-    print_hex((unsigned char *)ethernetFrame, ethernetFrameSize);
-    printf("Ethernet frame with offset of 5\n");
-    print_hex((unsigned char *)ethernetFrame, ethernetFrameSize - 10);*/
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    printf("IP packet sent at timestamp %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+    print_hex((unsigned char *)data, data_len);
+
     printf("\n");
 
     if (ret < 0) {
-        printf("An error occurred sending ethernet frame...\n");
+        printf("An error occurred sending ethernet frame with errno %d...\n", errno);
         return -1;
-    } else if (ret != ethernetFrameSize) {
+    } else if (ret != data_len) {
         printf("Incorrect ethernet frame size sent: %lu bytes...\n", ret);
         return -1;
     } else {
@@ -364,21 +421,32 @@ static int freertos_netdev_receive (void *userdata, void *buffer, size_t *count,
             printf("Not up to full ethernet frame read\n");
         }
 
-        if (memcmp(tempBuffer, hostAddress, 6) == 0 && memcmp(tempBuffer + 6, sutAddress, 6) == 0) {
-            printf("Found outbound frame\n");
-            print_hex((unsigned char *)tempBuffer, numRead);
-            printf("\n");
+        char *ip_bytes;
+        size_t ip_bytes_len;
 
+        if (CONFIG_NET_INTERFACE == TAP) { // If TAP, we are expecting an ethernet frame. We verify that the mac addresses match
+            if (memcmp(tempBuffer, hostAddress, 6) != 0 || memcmp(tempBuffer + 6, sutAddress, 6) != 0) {
+
+                printf("Not outbound frame\n");
+                print_hex((unsigned char *)tempBuffer, numRead);
+                printf("\n");
+                free(tempBuffer);
+                continue;
+            }
+
+            ip_bytes = tempBuffer + ethernetHeaderSize;
+            ip_bytes_len = numRead - ethernetHeaderSize;
         } else {
-            printf("Not outbound frame\n");
-            print_hex((unsigned char *)tempBuffer, numRead);
-            printf("\n");
-            free(tempBuffer);
-            continue;
+            ip_bytes = tempBuffer;
+            ip_bytes_len = numRead;
         }
 
-        memcpy(buffer, tempBuffer + ethernetHeaderSize, numRead - ethernetHeaderSize);
-        *count = numRead - ethernetHeaderSize;
+        printf("Found outbound frame\n");
+        print_hex((unsigned char *)tempBuffer, numRead);
+        printf("\n");
+
+        memcpy(buffer, ip_bytes, ip_bytes_len);
+        *count = ip_bytes_len;
 
         struct timeval tv;
         gettimeofday(&tv, NULL);
@@ -434,6 +502,58 @@ static ssize_t freertos_write(void *userdata, int fd, const void *buf, size_t co
     return syscallResponse.result;
 }
 
+
+static ssize_t freertos_sendto(void *userdata, int fd, const void *buf,
+			  size_t count, int flags,
+			  const struct sockaddr *dest_addr, socklen_t addrlen) {
+
+    print_current_time("socket_sendto");
+
+    struct SendToPackage sendToPackage;
+
+    sendToPackage.sockfd = fd;
+    sendToPackage.flags = flags;
+    if (addrlen <= sizeof(struct sockaddr)) { // IPv4 has addr equal to sockaddr (16)
+        memcpy(&sendToPackage.addr, dest_addr, addrlen);
+    } else { // IPv6 has addr equal to 28
+        memcpy(&sendToPackage.addr6, dest_addr, addrlen);
+    }
+    sendToPackage.addrlen = addrlen;
+
+    struct SyscallPackage syscallPackage;
+    strcpy(syscallPackage.syscallId, "socket_sendto\0");
+    syscallPackage.bufferedMessage = 1;
+    syscallPackage.bufferedCount = count;
+    syscallPackage.sendToPackage = sendToPackage;
+
+    struct SyscallResponsePackage syscallResponse;
+
+    int sendToPackageResult = write(data_socket, &syscallPackage, sizeof(struct SyscallPackage));
+
+    if (sendToPackageResult == -1) {
+        printf("Error writing SendToPackage to socket...\n");
+        return sendToPackageResult;
+    }
+
+    int writeBufferResult = write(data_socket, buf, count);
+
+    if (writeBufferResult == -1) {
+        printf("Error writing data to socket...\n");
+        return writeBufferResult;
+    }
+
+    int numRead = read(data_socket, &syscallResponse, sizeof(struct SyscallResponsePackage));
+
+    if (numRead == -1) {
+        printf("Response not read from RTOS...\n");
+        return -1;
+    }
+
+    printf("Response read from RTOS: %d...\n", syscallResponse.result);
+
+    return syscallResponse.result;
+}
+
 static ssize_t freertos_read(void *userdata, int fd, void *buf, size_t count) {
     print_current_time("socket_read");
     struct ReadPackage readPackage;
@@ -453,6 +573,45 @@ static ssize_t freertos_read(void *userdata, int fd, void *buf, size_t count) {
     } else if (syscallResponse.result < 0) {
         return 0;
     } else {
+        return syscallResponse.result;
+    }
+}
+
+static ssize_t freertos_recvfrom(void *userdata, int sockfd, void *buf, size_t len,
+			    int flags, struct sockaddr *src_addr,
+			    socklen_t *addrlen) {
+    print_current_time("socket_recvfrom");
+    struct RecvFromPackage recvFromPackage;
+    recvFromPackage.sockfd = sockfd;
+    recvFromPackage.count = len;
+    recvFromPackage.flags = flags;
+
+    struct SyscallPackage syscallPackage;
+    strcpy(syscallPackage.syscallId, "socket_recvfrom\0");
+    syscallPackage.recvFromPackage = recvFromPackage;
+
+    struct SyscallResponsePackage syscallResponse;
+
+    int result = send_syscall(&syscallPackage, &syscallResponse);
+
+    if (result == -1) {
+        return -1;
+    } else if (syscallResponse.result < 0) {
+        return 0;
+    } else {
+        socklen_t socklen = syscallResponse.acceptResponse.addrlen;
+        
+        if (socklen == sizeof(struct sockaddr)) {
+            memcpy(src_addr, &(syscallResponse.acceptResponse.addr), socklen);
+        } else if (socklen == sizeof(struct sockaddr_in6)) {
+            memcpy(src_addr, &(syscallResponse.acceptResponse.addr6), socklen);
+        } else {
+            // We assume that if this call was successful, the peer addr should have also been returned
+            return -1;
+        }
+        
+        *addrlen = syscallResponse.acceptResponse.addrlen;
+
         return syscallResponse.result;
     }
 }
@@ -583,7 +742,9 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     interface->userdata = malloc(10 * sizeof(char));
 
     interface->write = freertos_write;
+    interface->sendto = freertos_sendto;
     interface->read = freertos_read;
+    interface->recvfrom = freertos_recvfrom;
     interface->socket = freertos_socket;
     interface->bind = freertos_bind;
     interface->listen = freertos_listen;
@@ -653,14 +814,20 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     char tun_name[IFNAMSIZ];
 
     /* Connect to the device */
-    strcpy(tun_name, "tap0");
+    if (CONFIG_NET_INTERFACE == TAP) {
+        strcpy(tun_name, "tap0");
+    } else {
+        strcpy(tun_name, "tun0");
+    }
+    
 
     if (getenv("PD_TAP_FD")) {
         printf("TAP_FD found in environment... using...\n");
         tun_fd = atoi(getenv("PD_TAP_FD"));
     } else {
         printf("TAP_FD not found in environment... generating...\n");
-        tun_fd = tun_alloc(tun_name, IFF_TAP | IFF_NO_PI);  /* tun interface */
+        int interface_flag = CONFIG_NET_INTERFACE == TAP ? IFF_TAP : IFF_TUN;
+        tun_fd = tun_alloc(tun_name, interface_flag | IFF_NO_PI);  /* tun interface */
     }
 
     
