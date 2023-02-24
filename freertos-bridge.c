@@ -33,7 +33,7 @@
 #define TAP 1
 #define TUN 2
 
-#define CONFIG_NET_INTERFACE TUN
+#define CONFIG_NET_INTERFACE TAP
 
 static int data_socket;
 static int tun_fd;
