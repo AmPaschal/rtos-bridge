@@ -19,8 +19,6 @@
 //gcc -c -Wall -Werror -fPIC freertos-bridge.c
 //gcc -shared -o libfreertos-bridge.so freertos-bridge.o
 
-#define REMOTE_SOCKET_NAME "/tmp/mysocket1"
-#define CLIENT_SOCKET_NAME "/tmp/clientsocket2"
 #define BUFFER_SIZE 20
 #define ETH_IP_TYPE        0x0800
 #define FUZZ_MODE 0
@@ -732,6 +730,23 @@ int tun_alloc(char *dev, int flags) {
   return fd;
 }
 
+char *getSocketName() {
+    char *socket_name;
+
+    const char *interface_name = getenv("TAP_INTERFACE_NAME");
+
+    if (interface_name != NULL) {
+        
+        int len = strlen(interface_name) + strlen("/tmp/socket-") + 1;
+        socket_name = malloc(len * sizeof(char));
+        snprintf(socket_name, len, "/tmp/socket-%s", interface_name);
+    } else {
+        socket_name = strdup("/tmp/socket-default");
+    }
+
+    return socket_name;
+}
+
 
 void packetdrill_interface_init(const char *flags, struct packetdrill_interface *interface) {
 
@@ -758,7 +773,7 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     interface->usleep = freertos_usleep;
     interface->free = freertos_free;
 
-    struct sockaddr_un my_addr, peer_addr;
+    struct sockaddr_un peer_addr;
 
     int ret;
 
@@ -769,14 +784,12 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
         exit(EXIT_FAILURE);
     }
 
-    memset(&my_addr, 0, sizeof(struct sockaddr_un));
+    char *remote_socket_name = getSocketName();
+
     memset(&peer_addr, 0, sizeof(struct sockaddr_un));
 
-    my_addr.sun_family = AF_UNIX;
-    strcpy(my_addr.sun_path, CLIENT_SOCKET_NAME);
-
     peer_addr.sun_family = AF_UNIX;
-    strcpy(peer_addr.sun_path, REMOTE_SOCKET_NAME);
+    strcpy(peer_addr.sun_path, remote_socket_name);
 
     int connected = 0;
 
@@ -814,8 +827,11 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     char tun_name[IFNAMSIZ];
 
     /* Connect to the device */
-    if (CONFIG_NET_INTERFACE == TAP) {
-        strcpy(tun_name, "tap0");
+    char *interface_name;
+    if ((interface_name = getenv("TAP_INTERFACE_NAME")) != NULL) {
+        strcpy(tun_name, interface_name);
+    } else if (CONFIG_NET_INTERFACE == TAP) {
+        strcpy(tun_name, "tap1");
     } else {
         strcpy(tun_name, "tun0");
     }
