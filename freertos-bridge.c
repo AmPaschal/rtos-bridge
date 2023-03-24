@@ -20,7 +20,7 @@
 //gcc -c -Wall -Werror -fPIC freertos-bridge.c
 //gcc -shared -o libfreertos-bridge.so freertos-bridge.o
 
-typedef signed long long s64;
+
 #define BUFFER_SIZE 20
 #define ETH_IP_TYPE        0x0800
 #define FUZZ_MODE 0
@@ -151,25 +151,6 @@ static void print_hex(unsigned char * bin_data, size_t len)
 
     printf( "\n" );
 }
-
-static inline long long timeval_to_usecs(const struct timeval *tv)
-{
-    return ((s64)tv->tv_sec) * 1000000LL + (s64)tv->tv_usec;
-}
-
-static inline double usecs_to_secs(s64 usecs)
-{
-    return ((double)usecs) / 1.0e6;
-}
-
-s64 now_usecs(char* x)
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return timeval_to_usecs(&tv);
-}
-
-
 
 int send_syscall(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse);
 
@@ -684,11 +665,10 @@ int freertos_setsockopt(void *userdata, int sockfd, int level, int optname,
     printf("freertos_setsockopt...\n");
     return 0;
 }
-extern struct timespec  SYSCALL_B,SYSCALL_A;
+
 int send_syscall(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse) {
     int ret = write(data_socket, syscallPackage, sizeof(struct SyscallPackage));
-    //RECORD_TIME(&SYSCALL_A);
-    //TIME_LEN("Transmission stage",SYSCALL_A,SYSCALL_B);
+
     if (ret == -1) {
         printf("Error writing to socket with error number: %s...\n", strerror(errno));
         return -1;
@@ -862,8 +842,7 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     if ((interface_name = getenv("TAP_INTERFACE_NAME")) != NULL) {
         strcpy(tun_name, interface_name);
     } else if (CONFIG_NET_INTERFACE == TAP) {
-        //printf("give it a new name\n");
-        strcpy(tun_name, "tap0");
+        strcpy(tun_name, "tap1");
     } else {
         strcpy(tun_name, "tun0");
     }
@@ -915,9 +894,9 @@ void print_current_time(char *message) {
 
     millisec = tv.tv_usec/1000.0;
 
-    fprintf(fp, "\033[31m%s: \033[0m", message);
-    strftime(buffer, 26, "\033[31m%Y-%m-%d %H:%M:%S\033[0m", tm_info);
-    fprintf(fp, "\033[31m%s.%03d\033[0m\n", buffer, millisec); */
+    fprintf(fp, "%s: ", message);
+    strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+    fprintf(fp, "%s.%03d\033", buffer, millisec); */
 
 }
 
