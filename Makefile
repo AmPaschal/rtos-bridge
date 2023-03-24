@@ -5,7 +5,7 @@ cc := gcc
 RM := rm -rf
 
 #source files
-SOURCES := freertos-bridge.c
+SOURCES := freertos-bridge.c ../packetdrill/gtests/net/packetdrill/test.c
 
 #object files
 OBJS := $(SOURCES:.c=.o)

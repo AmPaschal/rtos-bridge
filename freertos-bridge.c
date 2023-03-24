@@ -15,10 +15,12 @@
 #include <errno.h>
 #include "time.h"
 #include <math.h>
+#include "../packetdrill/gtests/net/packetdrill/test.h"
 
 //gcc -c -Wall -Werror -fPIC freertos-bridge.c
 //gcc -shared -o libfreertos-bridge.so freertos-bridge.o
 
+typedef signed long long s64;
 #define BUFFER_SIZE 20
 #define ETH_IP_TYPE        0x0800
 #define FUZZ_MODE 0
@@ -150,11 +152,33 @@ static void print_hex(unsigned char * bin_data, size_t len)
     printf( "\n" );
 }
 
+static inline long long timeval_to_usecs(const struct timeval *tv)
+{
+    return ((s64)tv->tv_sec) * 1000000LL + (s64)tv->tv_usec;
+}
+
+static inline double usecs_to_secs(s64 usecs)
+{
+    return ((double)usecs) / 1.0e6;
+}
+
+s64 now_usecs(char* x)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return timeval_to_usecs(&tv);
+}
+
+
 
 int send_syscall(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse);
 
 
 static int freertos_socket(void *userdata, int domain, int type, int protocol) {
+
+    Loginfo("socket syscall received",NULL);
+
+
     print_current_time("socket_create");
     printf("Creating a freertos socket\n");
 
@@ -181,6 +205,8 @@ static int freertos_socket(void *userdata, int domain, int type, int protocol) {
 
 static int freertos_bind (void *userdata, int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
+    Loginfo("bind syscall recieved",NULL);
+
     print_current_time("socket_bind");
 
     struct BindPackage bindPackage;
@@ -206,6 +232,8 @@ static int freertos_bind (void *userdata, int sockfd, const struct sockaddr *add
 
 static int freertos_listen (void *userdata, int sockfd, int backlog) {
 
+    Loginfo("listen syscall received",NULL);
+
     print_current_time("socket_listen");
     struct ListenPackage listenPackage;
 
@@ -229,6 +257,7 @@ static int freertos_listen (void *userdata, int sockfd, int backlog) {
 
 static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 
+    //Loginfo("accept syscall",NULL);
     print_current_time("socket_accept");
 
     struct AcceptPackage acceptPackage;
@@ -258,6 +287,7 @@ static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, s
 
 
 static int freertos_connect (void *userdata, int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    Loginfo("connect syscall received",NULL);
 
     print_current_time("socket_connect");
 
@@ -383,7 +413,7 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
     printf("\n");
 
     if (ret < 0) {
-        printf("An error occurred sending ethernet frame with errno %d...\n", errno);
+        printf("An error occurred sending ethernet frame with errno %d...,\n", errno);
         return -1;
     } else if (ret != data_len) {
         printf("Incorrect ethernet frame size sent: %lu bytes...\n", ret);
@@ -397,7 +427,7 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
 
 static int freertos_netdev_receive (void *userdata, void *buffer, size_t *count,
 			      long long *time_usecs) {
-
+    Loginfo("Packet received",NULL);
     print_current_time("netdev_receive");
 
     printf("freertos_netdev_receive called...\n");
@@ -640,7 +670,7 @@ static void freertos_free(void *userdata) {
     }
 
     printf("Freeing up userdata...\n");
-
+    if(userdata != NULL)
     free(userdata);
 
     printf("Freeing tun_fd");
@@ -654,10 +684,11 @@ int freertos_setsockopt(void *userdata, int sockfd, int level, int optname,
     printf("freertos_setsockopt...\n");
     return 0;
 }
-
+extern struct timespec  SYSCALL_B,SYSCALL_A;
 int send_syscall(struct SyscallPackage *syscallPackage, struct SyscallResponsePackage *syscallResponse) {
     int ret = write(data_socket, syscallPackage, sizeof(struct SyscallPackage));
-
+    //RECORD_TIME(&SYSCALL_A);
+    //TIME_LEN("Transmission stage",SYSCALL_A,SYSCALL_B);
     if (ret == -1) {
         printf("Error writing to socket with error number: %s...\n", strerror(errno));
         return -1;
@@ -831,7 +862,8 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     if ((interface_name = getenv("TAP_INTERFACE_NAME")) != NULL) {
         strcpy(tun_name, interface_name);
     } else if (CONFIG_NET_INTERFACE == TAP) {
-        strcpy(tun_name, "tap1");
+        //printf("give it a new name\n");
+        strcpy(tun_name, "tap0");
     } else {
         strcpy(tun_name, "tun0");
     }
@@ -868,6 +900,8 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
 } */
 
 void print_current_time(char *message) {
+
+
     /* time_t timer;
     char buffer[26];
     int millisec;
@@ -881,8 +915,9 @@ void print_current_time(char *message) {
 
     millisec = tv.tv_usec/1000.0;
 
-    fprintf(fp, "%s: ", message);
-    strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
-    fprintf(fp, "%s.%03d\n", buffer, millisec); */
+    fprintf(fp, "\033[31m%s: \033[0m", message);
+    strftime(buffer, 26, "\033[31m%Y-%m-%d %H:%M:%S\033[0m", tm_info);
+    fprintf(fp, "\033[31m%s.%03d\033[0m\n", buffer, millisec); */
 
 }
+
