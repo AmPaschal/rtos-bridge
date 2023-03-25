@@ -37,7 +37,7 @@
 
 static int data_socket;
 static int tun_fd;
-
+typedef signed long long s64;
 // static FILE *fp;
 
 struct SocketPackage {
@@ -139,6 +139,25 @@ struct EthernetFrame {
     void *payload;
 };
 
+
+static inline long long timeval_to_usecs(const struct timeval *tv)
+{
+    return ((s64)tv->tv_sec) * 1000000LL + (s64)tv->tv_usec;
+}
+
+static inline double usecs_to_secs(s64 usecs)
+{
+    return ((double)usecs) / 1.0e6;
+}
+
+s64 now_usecs(char* x)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return timeval_to_usecs(&tv);
+}
+
+
 static void print_hex(unsigned char * bin_data, size_t len)
 
 {
@@ -238,7 +257,7 @@ static int freertos_listen (void *userdata, int sockfd, int backlog) {
 
 static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 
-    //Loginfo("accept syscall",NULL);
+   // Loginfo("accept syscall",NULL);
     print_current_time("socket_accept");
 
     struct AcceptPackage acceptPackage;
