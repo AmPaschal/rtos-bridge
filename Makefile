@@ -1,5 +1,6 @@
 #compiler name
 cc := gcc
+CFLAGS = -g
 
 #remove command
 RM := rm -rf

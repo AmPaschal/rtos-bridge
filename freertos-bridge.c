@@ -176,7 +176,7 @@ int send_syscall(struct SyscallPackage *syscallPackage, struct SyscallResponsePa
 
 static int freertos_socket(void *userdata, int domain, int type, int protocol) {
 
-    Loginfo("socket syscall received",NULL);
+    Loginfo("syscall received","socket");
 
 
     print_current_time("socket_create");
@@ -205,7 +205,7 @@ static int freertos_socket(void *userdata, int domain, int type, int protocol) {
 
 static int freertos_bind (void *userdata, int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
-    Loginfo("bind syscall recieved",NULL);
+    Loginfo("syscall received","bind");
 
     print_current_time("socket_bind");
 
@@ -232,7 +232,7 @@ static int freertos_bind (void *userdata, int sockfd, const struct sockaddr *add
 
 static int freertos_listen (void *userdata, int sockfd, int backlog) {
 
-    Loginfo("listen syscall received",NULL);
+    Loginfo("syscall received","listen");
 
     print_current_time("socket_listen");
     struct ListenPackage listenPackage;
@@ -257,8 +257,8 @@ static int freertos_listen (void *userdata, int sockfd, int backlog) {
 
 static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 
-   // Loginfo("accept syscall",NULL);
-    print_current_time("socket_accept");
+     Loginfo("syscall received","accept");
+
 
     struct AcceptPackage acceptPackage;
 
@@ -287,7 +287,7 @@ static int freertos_accept (void *userdata, int sockfd, struct sockaddr *addr, s
 
 
 static int freertos_connect (void *userdata, int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
-    Loginfo("connect syscall received",NULL);
+    Loginfo("syscall received","connect");
 
     print_current_time("socket_connect");
 
@@ -314,6 +314,7 @@ static int freertos_connect (void *userdata, int sockfd, const struct sockaddr *
 
 static int freertos_close(void *userdata, int fd) {
 
+    Loginfo("syscall received","close");
     print_current_time("socket_close");
 
     struct ClosePackage closePackage;
@@ -406,6 +407,7 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
     ssize_t ret = write(tun_fd, data, data_len);
 
     struct timeval tv;
+    Loginfo("packet","send");
     gettimeofday(&tv, NULL);
     printf("IP packet sent at timestamp %ld.%ld\n", tv.tv_sec, tv.tv_usec);
     print_hex((unsigned char *)data, data_len);
@@ -427,7 +429,7 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
 
 static int freertos_netdev_receive (void *userdata, void *buffer, size_t *count,
 			      long long *time_usecs) {
-    Loginfo("Packet received",NULL);
+    Loginfo("Packet","received");
     print_current_time("netdev_receive");
 
     printf("freertos_netdev_receive called...\n");
@@ -670,7 +672,7 @@ static void freertos_free(void *userdata) {
     }
 
     printf("Freeing up userdata...\n");
-    if(userdata != NULL)
+   // if(userdata != NULL)
     free(userdata);
 
     printf("Freeing tun_fd");
@@ -681,6 +683,7 @@ static void freertos_free(void *userdata) {
 
 int freertos_setsockopt(void *userdata, int sockfd, int level, int optname,
 			  const void *optval, socklen_t optlen) {
+    Loginfo("syscall received","setsockopt");
     printf("freertos_setsockopt...\n");
     return 0;
 }
@@ -861,7 +864,7 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     if ((interface_name = getenv("TAP_INTERFACE_NAME")) != NULL) {
         strcpy(tun_name, interface_name);
     } else if (CONFIG_NET_INTERFACE == TAP) {
-        strcpy(tun_name, "tap1");
+        strcpy(tun_name, "tap0");
     } else {
         strcpy(tun_name, "tun0");
     }
