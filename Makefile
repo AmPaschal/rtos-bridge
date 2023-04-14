@@ -1,16 +1,16 @@
-#compiler name
+# Compiler name
 cc := gcc
 
-#remove command
+# Remove command
 RM := rm -rf
 
-#source files
+# Source files
 SOURCES := freertos-bridge.c
 
-#object files
+# Object files
 OBJS := $(SOURCES:.c=.o)
 
-#main target
+# Main target
 main: $(OBJS)
 	$(CC) -shared -g -o libfreertos-bridge.so $^
 
