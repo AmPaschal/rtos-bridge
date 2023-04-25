@@ -19,7 +19,6 @@
 #include "freertos-bridge.h"
 
 #define BUFFER_SIZE 20
-#define ETH_IP_TYPE 0x0800
 #define FUZZ_MODE 0
 
 #define TAP 1
@@ -312,6 +311,14 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
 
     char *data;
     size_t data_len;
+    int eth_ip_type;
+
+    unsigned char ip_version = ((*(unsigned char*)buf) >> 4);
+    if(ip_version == 4){
+        eth_ip_type = 0x0800;
+    }else if(ip_version == 6){
+        eth_ip_type = 0x86DD;
+    }
 
     if (strncmp(getenv("TAP_INTERFACE_NAME"), "tun", 3) != 0) {
             //46:e7:d7:aa:9b:5f
@@ -322,7 +329,7 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
 
         memcpy(ethernetHeader.destinationAddress, destinationAddress, sizeof(destinationAddress));
         memcpy(ethernetHeader.sourceAddress, sourceAddress, sizeof(sourceAddress));
-        ethernetHeader.frameType = htons(ETH_IP_TYPE);
+        ethernetHeader.frameType = htons(eth_ip_type);
 
         size_t ethernetHeaderSize = sizeof(struct EthernetHeader);
 
