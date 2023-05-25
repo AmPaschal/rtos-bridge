@@ -1,9 +1,10 @@
-#include "freertos-bridge.h"
+/**
+ * Rtos Bridge
+*/
 #include <sys/time.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-
 #include <linux/if.h>
 #include <linux/if_tun.h>
 #include <arpa/inet.h>
@@ -13,30 +14,21 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <errno.h>
-#include "time.h"
 #include <math.h>
-
-//gcc -c -Wall -Werror -fPIC freertos-bridge.c
-//gcc -shared -o libfreertos-bridge.so freertos-bridge.o
+#include "time.h"
+#include "freertos-bridge.h"
 
 #define BUFFER_SIZE 20
-#define ETH_IP_TYPE        0x0800
 #define FUZZ_MODE 0
-// 1 - CVE-2018-16524
-// 2 - CVE-2018-16601
-// 3 - CVE-2018-16603
-// 4 - CVE-2018-16526
-// 5 - CVE-2022-36053
 
 #define TAP 1
 #define TUN 2
 
-#define CONFIG_NET_INTERFACE TAP
+#define CONFIG_NET_INTERFACE TUN
 
 static int data_socket;
 static int tun_fd;
 
-// static FILE *fp;
 
 struct SocketPackage {
     int domain;
@@ -319,8 +311,16 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
 
     char *data;
     size_t data_len;
+    int eth_ip_type;
 
-    if (CONFIG_NET_INTERFACE == TAP) {
+    unsigned char ip_version = ((*(unsigned char*)buf) >> 4);
+    if(ip_version == 4){
+        eth_ip_type = 0x0800;
+    }else if(ip_version == 6){
+        eth_ip_type = 0x86DD;
+    }
+
+    if (strncmp(getenv("TAP_INTERFACE_NAME"), "tun", 3) != 0) {
             //46:e7:d7:aa:9b:5f
         struct EthernetHeader ethernetHeader;
         uint8_t destinationAddress[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x41};
@@ -329,7 +329,7 @@ static int freertos_netdev_send (void *userdata, const void *buf, size_t count) 
 
         memcpy(ethernetHeader.destinationAddress, destinationAddress, sizeof(destinationAddress));
         memcpy(ethernetHeader.sourceAddress, sourceAddress, sizeof(sourceAddress));
-        ethernetHeader.frameType = htons(ETH_IP_TYPE);
+        ethernetHeader.frameType = htons(eth_ip_type);
 
         size_t ethernetHeaderSize = sizeof(struct EthernetHeader);
 
@@ -422,7 +422,7 @@ static int freertos_netdev_receive (void *userdata, void *buffer, size_t *count,
         char *ip_bytes;
         size_t ip_bytes_len;
 
-        if (CONFIG_NET_INTERFACE == TAP) { // If TAP, we are expecting an ethernet frame. We verify that the mac addresses match
+        if (strncmp(getenv("TAP_INTERFACE_NAME"), "tun", 3) != 0) { // If TAP, we are expecting an ethernet frame. We verify that the mac addresses match
             if (memcmp(tempBuffer, hostAddress, 6) != 0 || memcmp(tempBuffer + 6, sutAddress, 6) != 0) {
 
                 printf("Not outbound frame\n");
@@ -830,7 +830,7 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
     char *interface_name;
     if ((interface_name = getenv("TAP_INTERFACE_NAME")) != NULL) {
         strcpy(tun_name, interface_name);
-    } else if (CONFIG_NET_INTERFACE == TAP) {
+    } else if (strncmp(getenv("TAP_INTERFACE_NAME"), "tun", 3) != 0) {
         strcpy(tun_name, "tap1");
     } else {
         strcpy(tun_name, "tun0");
@@ -842,7 +842,7 @@ void packetdrill_interface_init(const char *flags, struct packetdrill_interface 
         tun_fd = atoi(getenv("PD_TAP_FD"));
     } else {
         printf("TAP_FD not found in environment... generating...\n");
-        int interface_flag = CONFIG_NET_INTERFACE == TAP ? IFF_TAP : IFF_TUN;
+        int interface_flag = (strncmp(getenv("TAP_INTERFACE_NAME"), "tun", 3) != 0) ? IFF_TAP : IFF_TUN;
         tun_fd = tun_alloc(tun_name, interface_flag | IFF_NO_PI);  /* tun interface */
     }
 
